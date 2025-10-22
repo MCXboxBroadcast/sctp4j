@@ -100,9 +100,5 @@ public class CachedBlockingSCTPStream extends SCTPStream {
     @Override
     public void close() throws Exception {
         super.close();
-        if ((_ex != null) && (!_ex.isShutdown())) {
-            _ex.shutdownNow();
-            Log.debug("shutdown of Stream-" + this.getNum() + "-Exec");
-        }
     }
 }

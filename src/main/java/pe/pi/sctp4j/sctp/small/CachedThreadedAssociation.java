@@ -118,7 +118,6 @@ public class CachedThreadedAssociation extends Association implements Runnable {
      To do .....
      */
     private int _transpMTU = 768;
-    private Thread retryThread;
     private Chunk[] _stashCookieEcho;
     private final Object _congestion = new Object();
     private boolean _firstRTT = true;
@@ -141,6 +140,7 @@ public class CachedThreadedAssociation extends Association implements Runnable {
     private long t1 = 1000; // first guess
     private long t3 = 1000; // ditto.
     private ScheduledExecutorService executorService;
+    private ScheduledFuture retryFuture;
 
     public CachedThreadedAssociation(DatagramTransport transport, AssociationListener al, ScheduledExecutorService executorService) {
         super(transport, new ExecutorAssociationListener(al, executorService));
@@ -159,7 +159,7 @@ public class CachedThreadedAssociation extends Association implements Runnable {
             _freeBlocks.add(dc);
         }
         resetCwnd();
-        executorService.scheduleAtFixedRate(this, this.t1, this.t3, TimeUnit.MILLISECONDS);
+        retryFuture = executorService.scheduleAtFixedRate(this, this.t1, this.t3, TimeUnit.MILLISECONDS);
     }
 
     public ScheduledExecutorService getExecutorService() {
@@ -918,7 +918,8 @@ public class CachedThreadedAssociation extends Association implements Runnable {
         synchronized (_congestion) {
             _congestion.notifyAll();
         }
-        retryThread = null;
+        retryFuture.cancel(true);
+        retryFuture = null;
     }
 
     // takes the callback invocation off the rcv thread
@@ -950,15 +951,9 @@ public class CachedThreadedAssociation extends Association implements Runnable {
                 } else {
                     _ex.execute(() -> _appAl.onDisAssociated(a));
                     try {
-                        _ex.awaitTermination(1000, TimeUnit.MILLISECONDS);
                         this.close();
-                    } catch (Throwable x) {
-                        Log.warn("Timeout on " + this.toString());
-                        try {
-                            this.close();
-                        } catch (Throwable y) {
-                            ;
-                        }
+                    } catch (Throwable ignored) {
+                        ;
                     }
                 }
             }
@@ -987,10 +982,7 @@ public class CachedThreadedAssociation extends Association implements Runnable {
 
         @Override
         public void close() throws Exception {
-            if ((_ex != null) && (!_ex.isShutdown())) {
-                _ex.shutdownNow();
-                Log.warn("shutdown of " + "Assoc-" + id + "-Exec");
-            }
+            // Nothing to do
         }
     }
 
